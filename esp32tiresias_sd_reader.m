@@ -1,4 +1,4 @@
-filename = 'recording.bin';
+filename = 'recording_2minbreathing.bin';
 fileInfo = dir(filename);
 fileSize = fileInfo.bytes;
 
