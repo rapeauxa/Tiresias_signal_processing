@@ -1,4 +1,13 @@
-filename = 'recording_2minbreathing.bin';
+%ESP32 TIRESIAS binary recording file reader
+%Author: Adrien Rapeaux
+%First release 10th August 2022
+
+%TODOs: change data integrity check to parse the whole file, looking for
+%every framePacket header, then reading ahead by the corresponding amount
+%of data, as framePackets could have variable lengths in the future within
+%the same file.
+
+filename = 'recording_2minbreathing.bin'; %Input filename of the recording here
 fileInfo = dir(filename);
 fileSize = fileInfo.bytes;
 
