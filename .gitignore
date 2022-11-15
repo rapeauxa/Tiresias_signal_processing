@@ -6,3 +6,5 @@ esp32tiresias_sd_reader.asv
 out.txt
 recording_compressed2.bin
 recording_compressed_2.bin
+recording_2.bin
+buffer.db

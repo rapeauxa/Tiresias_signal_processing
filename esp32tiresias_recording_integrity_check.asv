@@ -1,0 +1,101 @@
+%ESP32 TIRESIAS recording integrity check script.
+%This script loads a recording file (copied to disk from the ESP32 SD card)
+%and an SQLite .db file from the tiresias supervisor (server), and checks
+%each frame packet is present in both files, as well as checking whether
+%the data for each frame packet is the same for both versions of the
+%recording. Specifically, the script calls strcmp on the base-64-encoded
+%data from the server .db file, and applies base-64 encoding on the raw
+%data within the SD card framepackets before comparison.
+
+%Note: default SD card recording is 'recording.bin'
+%Note 2: default server database file is 'buffer.db'
+
+%Author: Adrien Rapeaux
+%First release 10th November 2022
+
+
+%TODO: see code below (only contains the SD card integrity check portion)
+
+
+clc
+clear variables
+
+%Open and read server recording (database file)
+conn = sqlite('buffer.db');
+tablename = "DATAFRAME";
+results = sqlread(conn,tablename);
+close(conn)
+
+radarData = results.data; %This is the b64-encoded version
+radarServerTimestamps = results.timestamp;
+
+for i = 1:5
+    disp(['server packet timestamp ' int2str(i) ': ' int2str(radarServerTimestamps(i))])
+end
+
+
+SDFile = 'recording.bin'; %Input filename of the recording here
+fileInfo = dir(SDFile);
+fileSize = fileInfo.bytes;
+
+disp(['Opening SD recording file, size ',num2str(fileSize),' bytes.']);
+fid = fopen(SDFile,'r');
+frewind(fid);
+
+disp("Checking recording integrity...");
+
+framePackets = 0;
+prevFrameNumber = 1;
+prevMatchedNumber = 1;
+% reading a frame packet header
+while(~feof(fid))
+[sdRead,count] = fread(fid,1,'bool');
+if (feof(fid)) %for some reason the feof in while loop doesn't trigger until fread fails when attempting to read start of next frame packet header
+    break;
+end
+for i=1:3
+    fread(fid,1,'uint8');
+end
+format = fread(fid,1,'uint32');
+frameNumber(framePackets+1,1) = fread(fid,1,'uint32');
+if ~((prevFrameNumber == frameNumber(framePackets+1,1)) || (prevFrameNumber+50 == frameNumber(framePackets+1,1)))
+    disp(['File integrity check failed! Frame number was ' num2str(frameNumber(framePackets+1,1)) ' but ' num2str(prevFrameNumber) ' was read previously']); 
+    disp(['Process stopped at ' num2str(ftell(fid)) ' bytes.'])
+    break;
+end
+prevFrameNumber = frameNumber(framePackets+1,1);
+bins = fread(fid,1,'int32');
+datalen = fread(fid,1,'int32');
+KFrameDataAddr = fread(fid,1,'uint32');
+DFrameDataAddr = fread(fid,49,'uint32');
+bytes = fread(fid,1,'uint32');
+sdTimeStamp = uint64(fread(fid,1,'int64'));
+normalization_offset = fread(fid,1,'float');
+normalization_nfactor = fread(fid,1,'float');
+filter_normalization_factor = fread(fid,1,'float');
+
+garbage = fread(fid,1,'uint32'); %Because size of header is 248 bytes
+
+data = uint32(fread(fid,(bytes/4),'uint32'));
+
+if ~isempty(find(radarServerTimestamps == sdTimeStamp,1))
+    %disp(['found matched device packet timestamp at SD file framePacket number: ' int2str(framePackets+1) ' for timestamp: ' int2str(sdTimeStamp)])
+    if prevMatchedNumber~=framePackets
+        disp(['found framePackets missing in server file: ' int2str(framePackets+1-prevMatchedNumber) ' packets until timestamp: ' int2str(sdTimeStamp)])
+    end
+    prevMatchedNumber = framePackets+1;
+    sdDataB64 = matlab.net.base64encode(data);
+end
+
+data_string = "";
+if ((~isempty(find(data == 167,1)))||(~isempty(find(data == 16843009,1))))
+    %disp('Found a suspicious data point!');
+end
+% for i=1:length(data)
+%     data_string = strcat(data_string,",",num2str(data(i)));
+% end
+framePackets = framePackets +1;
+end
+frewind(fid)
+fclose(fid);
+disp(['Successfully read ' num2str(framePackets*50) ' frames']);
